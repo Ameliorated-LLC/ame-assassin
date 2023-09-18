@@ -1409,8 +1409,8 @@ namespace ame_assassin
                 Environment.Exit(1);
             }
 
-                Console.WriteLine($"\r\nAME Assassin v{ver}\nSurgically removes APPX components (mostly).\n\nAME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]\nAccepts wildcards (*).\n\n-Family        Removes specified package family(s).\n-Package       Removes specified package(s).\n-App           Removes specified application(s) from a package(s).\n-ClearCache    Clears the TempState cache for a given package in all user profiles.\n-Verbose       Provides verbose informational output to console.\n\nExamples:\n\n    AME_Assassin -Family \"Microsoft.BingWeather_8wekyb3d8bbwe\"\r\n    AME_Assassin -Package *FeedbackHub* -Verbose\n    AME_Assassin -App *WebExperienceHost*");
             if (args.Length == 0 || args[0] == "/?" || args[0] == "-?" || args[0] == "/help" || args[0] == "-help" || args[0] == "--?" || args[0] == "--help") {
+                Console.WriteLine($"\r\nAME Assassin v{ver}\nSurgically removes APPX components (mostly).\n\nAME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]\nAccepts wildcards (*).\n\n-Family        Removes specified package family(s).\n-Package       Removes specified package(s).\n-App           Removes specified application(s) from a package(s).\n-ClearCache    Clears the TempState cache for a given package in all user profiles.\n-Verbose       Provides verbose informational output to console.\n-Unregister    Only unregisters the specified AppX, instead of removing files.\n\nExamples:\n\n    AME_Assassin -Family \"Microsoft.BingWeather_8wekyb3d8bbwe\"\r\n    AME_Assassin -Package *FeedbackHub* -Verbose\n    AME_Assassin -App *WebExperienceHost*");
                 Environment.Exit(0);
             }
             
