@@ -370,7 +370,7 @@ namespace ame_assassin
                             while (identityName.Read()) {
                                 MachineData("_ApplicationIdentityID", identityName.GetString(0));
 
-                                if (Program.Verbose) Console.WriteLine($"\r\nRemoving _ApplicationIdentityID value {identityName.GetString(0)}\nfrom table ApplicationIdentity...");
+                                if (Program.Verbose) Console.WriteLine($"\r\nRemoving _ApplicationIdentityID value {identityName.GetString(0)} from table ApplicationIdentity...");
                                 try {
                                     var eliminate = Program.ActiveTransaction.NewCommand($@"DELETE FROM ""ApplicationIdentity"" WHERE ""_ApplicationIdentityID"" = ""{identityName.GetString(0)}""");
                                     eliminate.ExecuteNonQuery();
@@ -517,7 +517,7 @@ namespace ame_assassin
                         }
                         */
 
-                        if (Program.Verbose) Console.WriteLine($"\r\nRemoving {column} value {value}\nfrom table {tableItem}...");
+                        if (Program.Verbose) Console.WriteLine($"\r\nRemoving {column} value {value} from table {tableItem}...");
 
                         try {
                             var eliminate = Program.ActiveTransaction.NewCommand($@"DELETE FROM ""{tableItem}"" WHERE ""{column}"" = ""{value}""");
@@ -729,7 +729,7 @@ namespace ame_assassin
                 }
             }
 
-            if (Program.Verbose) Console.WriteLine($"\r\nRemoving {key} value {value}\nfrom table {table}...");
+            if (Program.Verbose) Console.WriteLine($"\r\nRemoving {key} value {value} from table {table}...");
 
             try {
                 var eliminate = Program.ActiveTransaction.NewCommand($@"DELETE FROM ""{table}"" WHERE ""{key}"" = ""{value}""");
@@ -1403,14 +1403,34 @@ namespace ame_assassin
         {
             const string ver = "0.4";
             Verbose = false;
+            
+            string helpMessage = $@"
+AME Assassin v{ver}
+Surgically removes APPX components (mostly).
 
-            if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) {
-                Console.WriteLine("\r\nYou must be an administrator running a console session in order to\nuse AME Assassin.");
+AME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]
+Accepts wildcards (*).
+
+-Family        Removes specified package family(s).
+-Package       Removes specified package(s).
+-App           Removes specified application(s) from a package(s).
+-ClearCache    Clears the TempState cache for a given package in all user profiles.
+-Verbose       Provides verbose informational output to console.
+-Unregister    Only unregisters the specified AppX, instead of removing files.
+
+Examples:
+
+    AME_Assassin -Family ""Microsoft.BingWeather_8wekyb3d8bbwe""
+    AME_Assassin -Package *FeedbackHub* -Verbose
+    AME_Assassin -App *WebExperienceHost* -Unregister";
+
+            if (!string.Equals(WindowsIdentity.GetCurrent().User.Value, "S-1-5-18", StringComparison.OrdinalIgnoreCase)) {
+                Console.WriteLine("\r\nYou must be TrustedInstaller in order to use AME Assassin.");
                 Environment.Exit(1);
             }
 
-            if (args.Length == 1 && args[0] == "/?" || args[0] == "-?" || args[0] == "/help" || args[0] == "-help" || args[0] == "--?" || args[0] == "--help") {
-                Console.WriteLine($"\r\nAME Assassin v{ver}\nSurgically removes APPX components (mostly).\n\nAME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]\nAccepts wildcards (*).\n\n-Family        Removes specified package family(s).\n-Package       Removes specified package(s).\n-App           Removes specified application(s) from a package(s).\n-ClearCache    Clears the TempState cache for a given package in all user profiles.\n-Verbose       Provides verbose informational output to console.\n\nExamples:\n\n    AME_Assassin -Family \"Microsoft.BingWeather_8wekyb3d8bbwe\"\r\n    AME_Assassin -Package *FeedbackHub* -Verbose\n    AME_Assassin -App *WebExperienceHost*");
+            if (args.Length == 0 || args[0] == "/?" || args[0] == "-?" || args[0] == "/help" || args[0] == "-help" || args[0] == "--?" || args[0] == "--help") {
+                Console.WriteLine(helpMessage);
                 Environment.Exit(0);
             }
             
@@ -1432,16 +1452,23 @@ namespace ame_assassin
                 Environment.Exit(0);
             }
 
-            if (args.Length != 2 && args.Length != 3) {
-                Console.WriteLine($"Invalid syntax.\n\nAME Assassin v{ver}\nSurgically removes APPX components (mostly).\n\nAME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]\nAccepts wildcards (*).\n\n-Family        Removes specified package family(s).\n-Package       Removes specified package(s).\n-App           Removes specified application(s) from a package(s).\n-ClearCache    Clears the TempState cache for a given package in all user profiles.\n-Verbose       Provides verbose informational output to console.\n\nExamples:\n\n    AME_Assassin -Family \"Microsoft.BingWeather_8wekyb3d8bbwe\"\r\n    AME_Assassin -Package *FeedbackHub* -Verbose\n    AME_Assassin -App *WebExperienceHost*");
+            if (args.Length != 2 && args.Length != 3)
+            {
+                Console.WriteLine("Invalid syntax.");
+                Console.WriteLine(helpMessage);
                 Environment.Exit(1);
             } else if (!string.Equals(args[0], "-App", StringComparison.CurrentCultureIgnoreCase) && !string.Equals(args[0], "-Package", StringComparison.CurrentCultureIgnoreCase) && !string.Equals(args[0], "-Family", StringComparison.CurrentCultureIgnoreCase) && !string.Equals(args[0], "-ClearCache", StringComparison.CurrentCultureIgnoreCase)) {
-                Console.WriteLine($"Invalid syntax.\n\nAME Assassin v{ver}\nSurgically removes APPX components (mostly).\n\nAME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]\nAccepts wildcards (*).\n\n-Family        Removes specified package family(s).\n-Package       Removes specified package(s).\n-App           Removes specified application(s) from a package(s).\n-ClearCache    Clears the TempState cache for a given package in all user profiles.\n-Verbose       Provides verbose informational output to console.\n\nExamples:\n\n    AME_Assassin -Family \"Microsoft.BingWeather_8wekyb3d8bbwe\"\r\n    AME_Assassin -Package *FeedbackHub* -Verbose\n    AME_Assassin -App *WebExperienceHost*");
+                Console.WriteLine("Invalid syntax.");
+                Console.WriteLine(helpMessage);
                 Environment.Exit(1);
             }
 
-            if (args.Length == 3 && !string.Equals(args[2], "-Verbose", StringComparison.CurrentCultureIgnoreCase)) {
-                Console.WriteLine($"Invalid syntax.\n\nAME Assassin v{ver}\nSurgically removes APPX components (mostly).\n\nAME_Assassin [-Family|-Package|-App|-ClearCache] <string> [Optional Arguments]\nAccepts wildcards (*).\n\n-Family        Removes specified package family(s).\n-Package       Removes specified package(s).\n-App           Removes specified application(s) from a package(s).\n-ClearCache    Clears the TempState cache for a given package in all user profiles.\n-Verbose       Provides verbose informational output to console.\n\nExamples:\n\n    AME_Assassin -Family \"Microsoft.BingWeather_8wekyb3d8bbwe\"\r\n    AME_Assassin -Package *FeedbackHub* -Verbose\n    AME_Assassin -App *WebExperienceHost*");
+            if (args.Length == 3 && 
+                !string.Equals(args[2], "-Verbose", StringComparison.CurrentCultureIgnoreCase) &&
+                !string.Equals(args[2], "-Unregister", StringComparison.CurrentCultureIgnoreCase)) 
+            {
+                Console.WriteLine("Invalid syntax.");
+                Console.WriteLine(helpMessage);
                 Environment.Exit(1);
             } else if (args.Length == 3) {
                 Verbose = true;
@@ -1592,7 +1619,7 @@ namespace ame_assassin
                         }
                     }
 
-                    Console.WriteLine($"\r\nRemoving {displayName} {content.GetString(1)}\nfrom machine database...");
+                    Console.WriteLine($"\r\nRemoving {displayName} {content.GetString(1)} from machine database...");
                     Assassin.MachineData($"_{table}ID", id, app: app);
 
                     /*
@@ -1683,7 +1710,7 @@ namespace ame_assassin
                     } catch (Exception e) {
                         Console.WriteLine($"\r\nError: Could not disable foreign keys.\r\nException: {e.Message}");
                     }
-                    if (Verbose) Console.WriteLine($"\r\nRemoving application package {pkgId} xml data from deployment database...");
+                    if (Verbose) Console.WriteLine($"\r\nRemoving application package {pkgId} XML data from deployment database...");
 
                     try {
                         var nullifyXml = ActiveTransaction.NewCommand($@"UPDATE ""AppxManifest"" SET ""Xml"" = ""00"" WHERE ""Package"" = ""{pkgId}""");
@@ -1750,80 +1777,123 @@ namespace ame_assassin
 
             deployEnd:
 
-            switch (table) {
-                case "PackageFamily":
-                    foreach (var filter in Assassin.PackageFilterList) {
-                        try {
-                            Assassin.Files(filter);
-                        } catch (Exception e) {
-                            Console.WriteLine($"\r\nError: Could not remove files belonging to package {filter}.\r\nException: {e.Message}");
+            if (!args.Contains("-Unregister"))
+            {
+                switch (table)
+                {
+                    case "PackageFamily":
+                        foreach (var filter in Assassin.PackageFilterList)
+                        {
+                            try
+                            {
+                                Assassin.Files(filter);
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(
+                                    $"\r\nError: Could not remove files belonging to package {filter}.\r\nException: {e.Message}");
+                            }
+
+                            try
+                            {
+                                Assassin.RegistryKeys(filter);
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(
+                                    $"\r\nError: Could not remove registry keys belonging to package {filter}.\r\nException: {e.Message}");
+                            }
                         }
 
-                        try {
-                            Assassin.RegistryKeys(filter);
-                        } catch (Exception e) {
-                            Console.WriteLine($"\r\nError: Could not remove registry keys belonging to package {filter}.\r\nException: {e.Message}");
+                        foreach (var packageDir in Assassin.PackageDirectoryList)
+                        {
+                            try
+                            {
+                                Assassin.FilterDelete(Directory.GetParent(packageDir).FullName,
+                                    Path.GetFileName(packageDir));
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(
+                                    $"\r\nError: Could not remove package directory {packageDir}.\r\nException: {e.Message}");
+                            }
                         }
-                    }
-                    
-                    foreach (var packageDir in Assassin.PackageDirectoryList)
-                    {
+
                         try
                         {
-                            Assassin.FilterDelete(Directory.GetParent(packageDir).FullName, Path.GetFileName(packageDir));
-                        } catch (Exception e) {
-                            Console.WriteLine($"\r\nError: Could not remove package directory {packageDir}.\r\nException: {e.Message}");
+                            Assassin.RegistryKeys(args[1], family: true);
                         }
-                    }
-
-                    try {
-                        Assassin.RegistryKeys(args[1], family: true);
-                    } catch (Exception e) {
-                        Console.WriteLine($"\r\nError: Could not remove registry keys belonging to family {args[0]}.\r\nException: {e.Message}");
-                    }
-
-                    break;
-                case "Package":
-                    foreach (var filter in Assassin.PackageFilterList) {
-                        try {
-                            Assassin.Files(filter);
-                            Assassin.Files(args[1]);
-                        } catch (Exception e) {
-                            Console.WriteLine($"\r\nError: Could not remove files belonging to package {filter}.\r\nException: {e.Message}");
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(
+                                $"\r\nError: Could not remove registry keys belonging to family {args[0]}.\r\nException: {e.Message}");
                         }
 
-                        try {
-                            Assassin.RegistryKeys(filter);
-                            Assassin.Files(args[1]);
-                        } catch (Exception e) {
-                            Console.WriteLine($"\r\nError: Could not remove registry keys belonging to package {filter}.\r\nException: {e.Message}");
+                        break;
+                    case "Package":
+                        foreach (var filter in Assassin.PackageFilterList)
+                        {
+                            try
+                            {
+                                Assassin.Files(filter);
+                                Assassin.Files(args[1]);
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(
+                                    $"\r\nError: Could not remove files belonging to package {filter}.\r\nException: {e.Message}");
+                            }
+
+                            try
+                            {
+                                Assassin.RegistryKeys(filter);
+                                Assassin.Files(args[1]);
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(
+                                    $"\r\nError: Could not remove registry keys belonging to package {filter}.\r\nException: {e.Message}");
+                            }
                         }
-                    }
-                    foreach (var packageDir in Assassin.PackageDirectoryList)
-                    {
+
+                        foreach (var packageDir in Assassin.PackageDirectoryList)
+                        {
+                            try
+                            {
+                                Assassin.FilterDelete(Directory.GetParent(packageDir).FullName,
+                                    Path.GetFileName(packageDir));
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine(
+                                    $"\r\nError: Could not remove package directory {packageDir}.\r\nException: {e.Message}");
+                            }
+                        }
+
+                        break;
+                    case "Application":
                         try
                         {
-                            Assassin.FilterDelete(Directory.GetParent(packageDir).FullName, Path.GetFileName(packageDir));
-                        } catch (Exception e) {
-                            Console.WriteLine($"\r\nError: Could not remove package directory {packageDir}.\r\nException: {e.Message}");
+                            Assassin.Files("|NONE|", true);
                         }
-                    }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(
+                                $"\r\nError: Could not remove files belonging to application {args[1]}.\r\nException: {e.Message}");
+                        }
 
-                    break;
-                case "Application":
-                    try {
-                        Assassin.Files("|NONE|", true);
-                    } catch (Exception e) {
-                        Console.WriteLine($"\r\nError: Could not remove files belonging to application {args[1]}.\r\nException: {e.Message}");
-                    }
+                        try
+                        {
+                            Assassin.RegistryKeys(args[1], true);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(
+                                $"\r\nError: Could not remove registry keys belonging to application {args[1]}.\r\nException: {e.Message}");
+                        }
 
-                    try {
-                        Assassin.RegistryKeys(args[1], true);
-                    } catch (Exception e) {
-                        Console.WriteLine($"\r\nError: Could not remove registry keys belonging to application {args[1]}.\r\nException: {e.Message}");
-                    }
-
-                    break;
+                        break;
+                }
             }
 
             if (FileLock.HasKilledExplorer)
