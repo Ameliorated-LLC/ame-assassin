@@ -1404,8 +1404,8 @@ namespace ame_assassin
             const string ver = "0.4";
             Verbose = false;
 
-            if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) {
-                Console.WriteLine("\r\nYou must be an administrator running a console session in order to\nuse AME Assassin.");
+            if (!string.Equals(WindowsIdentity.GetCurrent().User.Value, "S-1-5-18", StringComparison.OrdinalIgnoreCase)) {
+                Console.WriteLine("\r\nYou must be TrustedInstaller in order to use AME Assassin.");
                 Environment.Exit(1);
             }
 
