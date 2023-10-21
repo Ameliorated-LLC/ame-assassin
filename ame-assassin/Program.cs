@@ -317,45 +317,6 @@ namespace ame_assassin
         private static List<string> AppFiles = new List<string>();
         public static List<string> ApplicationProgIDList;
 
-        public static void StopService(string serviceName)
-        {
-            var service = ServiceController.GetServices().FirstOrDefault(serv => serv.ServiceName == serviceName);
-            
-            if (service != null && service.Status != ServiceControllerStatus.StopPending && service.Status != ServiceControllerStatus.Stopped)
-            {
-                var selfDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-
-                Console.WriteLine($"\r\nKilling service {serviceName}...");
-
-                var procInfo = new ProcessStartInfo(Program.ProcessHacker, $@"-s -elevate -c -ctype service -cobject {serviceName} -caction stop");
-                procInfo.UseShellExecute = false;
-                procInfo.CreateNoWindow = true;
-
-                var proc = new Process {
-                    StartInfo = procInfo,
-                    EnableRaisingEvents = true
-                };
-                try {
-                    proc.Start();
-                    proc.WaitForExit(5000);
-                } catch (Exception e4) {
-                    Console.WriteLine($"\r\nError: Could not start ProcessHacker.\r\nException: {e4.Message}");
-                }
-                Console.WriteLine("\r\nWaiting for the service to stop...");
-
-                var i = 0;
-                while (service.Status != ServiceControllerStatus.Stopped && i <= 30)
-                {
-                    service.Refresh();
-                    //Wait for the service to stop
-                    System.Threading.Thread.Sleep(100);
-                    i++;
-                }
-                if (i > 20) {
-                    Console.WriteLine($"\r\nError: Service exceeded expected exit time.");
-                }
-            }
-        }
         public static void MachineData(string key, string value, bool app = false)
         {
             if (key == "_PackageID") MachineDependentsData(value);
@@ -1393,6 +1354,7 @@ namespace ame_assassin
     {
         public static string ProcessHacker;
         public static bool Verbose;
+        public static bool UseKernelDriver;
         public static Transaction ActiveTransaction;
         public static List<string> TableList;
         public static List<string> PackageIdList;
@@ -1434,12 +1396,14 @@ Examples:
                 Environment.Exit(0);
             }
             
+            UseKernelDriver = args.Contains("-UseKernelDriver");
+            
             var selfDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             if (File.Exists($@"{selfDir}\ProcessHacker\x64\ProcessHacker.exe")) {
                 ProcessHacker = $@"""{selfDir}\ProcessHacker\x64\ProcessHacker.exe""";
             } else if (File.Exists($@"{Directory.GetParent(selfDir)}\ProcessHacker\x64\ProcessHacker.exe")) {
                 ProcessHacker = $@"""{Directory.GetParent(selfDir)}\ProcessHacker\x64\ProcessHacker.exe""";
-            } else {
+            } else if (UseKernelDriver) {
                 Console.WriteLine("\r\nProcessHacker executable not detected.");
                 Environment.Exit(0);
             }
@@ -1462,16 +1426,23 @@ Examples:
                 Console.WriteLine(helpMessage);
                 Environment.Exit(1);
             }
-
-            if (args.Length == 3 && 
-                !string.Equals(args[2], "-Verbose", StringComparison.CurrentCultureIgnoreCase) &&
-                !string.Equals(args[2], "-Unregister", StringComparison.CurrentCultureIgnoreCase)) 
+            
+            if (args.Length >= 3)
             {
-                Console.WriteLine("Invalid syntax.");
-                Console.WriteLine(helpMessage);
-                Environment.Exit(1);
-            } else if (args.Length == 3) {
-                Verbose = true;
+                foreach (var optionalArg in args.Skip(2))
+                {
+                    if (string.Equals(optionalArg, "-Verbose", StringComparison.CurrentCultureIgnoreCase))
+                        Verbose = true;
+                    else if (string.Equals(optionalArg, "-UseKernelDriver", StringComparison.CurrentCultureIgnoreCase))
+                        ;
+                    else if (string.Equals(optionalArg, "-Unregister", StringComparison.CurrentCultureIgnoreCase))
+                        ;
+                    else
+                    {
+                        Console.WriteLine("Invalid syntax.");
+                        Console.WriteLine(helpMessage);
+                    }
+                }
             }
 
             if (string.Equals(args[0], "-ClearCache", StringComparison.CurrentCultureIgnoreCase)) {
@@ -1777,7 +1748,7 @@ Examples:
 
             deployEnd:
 
-            if (!args.Contains("-Unregister"))
+            if (!args.Contains("-Unregister", StringComparer.OrdinalIgnoreCase))
             {
                 switch (table)
                 {

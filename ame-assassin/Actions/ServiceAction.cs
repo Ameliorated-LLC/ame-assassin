@@ -1,5 +1,6 @@
 ﻿#nullable enable
 using System;
+using System.Configuration.Install;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -161,8 +162,10 @@ namespace TrustedUninstaller.Shared.Actions
                 foreach (ServiceController dependentService in service.DependentServices)
                 {
                     Console.WriteLine($"Killing dependent service {dependentService.ServiceName}...");
+                    
                     cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {dependentService.ServiceName} -caction stop";
-                    cmdAction.RunTask();
+                    if (Program.UseKernelDriver) cmdAction.RunTask(); 
+                    else dependentService.Stop();
                     
                     Console.WriteLine("Waiting for the service to stop...");
                     int delay = 100;
@@ -211,8 +214,8 @@ namespace TrustedUninstaller.Shared.Actions
                 if (DeleteStop && service.Status != ServiceControllerStatus.StopPending && service.Status != ServiceControllerStatus.Stopped)
                 {
                     cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction stop";
-                    cmdAction.RunTask();
-                        
+                    if (Program.UseKernelDriver) cmdAction.RunTask(); 
+                    else service.Stop();
                 }
 
                 Console.WriteLine("Waiting for the service to stop...");
@@ -261,13 +264,20 @@ namespace TrustedUninstaller.Shared.Actions
                 else
                 {
                     cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction delete";
-                    cmdAction.RunTask();
+                    if (Program.UseKernelDriver) cmdAction.RunTask(); 
+                    else
+                    {
+                        ServiceInstaller ServiceInstallerObj = new ServiceInstaller();
+                        ServiceInstallerObj.Context = new InstallContext();
+                        ServiceInstallerObj.ServiceName = service.ServiceName; 
+                        ServiceInstallerObj.Uninstall(null);
+                    }
                 }
             }
             else if (Operation != ServiceOperation.Change)
             {
                 cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {ServiceName} -caction {Operation.ToString().ToLower()}";
-                cmdAction.RunTask();
+                if (Program.UseKernelDriver) cmdAction.RunTask();
             }
             else
             {

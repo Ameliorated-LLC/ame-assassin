@@ -17,6 +17,18 @@ namespace TrustedUninstaller.Shared.Actions
         [return: MarshalAs(UnmanagedType.Bool)]
         static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
         
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(ProcessAccessFlags dwDesiredAccess,
+            bool bInheritHandle, int dwProcessId);
+        public enum ProcessAccessFlags : uint
+        {
+            QueryLimitedInformation = 0x1000
+        }
+        
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool CloseHandle(IntPtr hObject);
+        
         public string? ProcessName { get; set; }
         
         public string? PathContains { get; set; }
@@ -200,7 +212,9 @@ namespace TrustedUninstaller.Shared.Actions
                         
                         if (!RegexNotCritical.Any(x => Regex.Match(process.ProcessName, x, RegexOptions.IgnoreCase).Success)) {
                             bool isCritical = false;
-                            IsProcessCritical(process.Handle, ref isCritical);
+                            IntPtr hprocess = OpenProcess(ProcessAccessFlags.QueryLimitedInformation, false, process.Id);
+                            IsProcessCritical(hprocess, ref isCritical);
+                            CloseHandle(hprocess);
                             if (isCritical)
                             {
                                 Console.WriteLine($"{process.ProcessName} is a critical process, skipping...");
@@ -211,7 +225,8 @@ namespace TrustedUninstaller.Shared.Actions
                         cmdAction.Command = Environment.Is64BitOperatingSystem ?
                             $"Executables\\ProcessHacker\\x64\\ProcessHacker.exe -s -elevate -c -ctype process -cobject {process.Id} -caction terminate" :
                             $"Executables\\ProcessHacker\\x86\\ProcessHacker.exe -s -elevate -c -ctype process -cobject {process.Id} -caction terminate";
-                        cmdAction.RunTask();
+                        if (Program.UseKernelDriver) cmdAction.RunTask();
+                        else TerminateProcess(process.Handle, 1);
                         
                         int i = 0;
                         while (i <= 15 && GetProcess().Any(x => x.Id == process.Id && x.ProcessName == process.ProcessName))
@@ -230,25 +245,19 @@ namespace TrustedUninstaller.Shared.Actions
             {
                 if (ProcessName != null && ProcessName.Equals("explorer", StringComparison.OrdinalIgnoreCase))
                 {
-                    try
-                    {
-                        var process = Process.GetProcessById(ProcessID.Value);
-                        TerminateProcess(process.Handle, 1);
-                        FileLock.HasKilledExplorer = true;
-                    } catch (Exception)
-                    {
-                        cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype process -cobject {ProcessID} -caction terminate";
-                        cmdAction.RunTask();
-                    }
+                    var process = Process.GetProcessById(ProcessID.Value);
+                    TerminateProcess(process.Handle, 1);
+                    FileLock.HasKilledExplorer = true;
                 }
                 else
                 {
                     var process = Process.GetProcessById(ProcessID.Value);
                     
-                    if (!RegexNotCritical.Any(x => Regex.Match(process.ProcessName, x, RegexOptions.IgnoreCase).Success))
-                    {
+                    if (!RegexNotCritical.Any(x => Regex.Match(process.ProcessName, x, RegexOptions.IgnoreCase).Success)) {
                         bool isCritical = false;
-                        IsProcessCritical(process.Handle, ref isCritical);
+                        IntPtr hprocess = OpenProcess(ProcessAccessFlags.QueryLimitedInformation, false, process.Id);
+                        IsProcessCritical(hprocess, ref isCritical);
+                        CloseHandle(hprocess);
                         if (isCritical)
                         {
                             Console.WriteLine($"{process.ProcessName} is a critical process, skipping...");
@@ -257,7 +266,8 @@ namespace TrustedUninstaller.Shared.Actions
                     }
                     
                     cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype process -cobject {ProcessID} -caction terminate";
-                    cmdAction.RunTask();
+                    if (Program.UseKernelDriver) cmdAction.RunTask();
+                    else TerminateProcess(Process.GetProcessById(ProcessID.Value).Handle, 1);
                 }
 
                 Task.Delay(100);
@@ -279,18 +289,20 @@ namespace TrustedUninstaller.Shared.Actions
                     }
                     else
                     {
-                        if (!RegexNotCritical.Any(x => Regex.Match(process.ProcessName, x, RegexOptions.IgnoreCase).Success))
-                        {
+                        if (!RegexNotCritical.Any(x => Regex.Match(process.ProcessName, x, RegexOptions.IgnoreCase).Success)) {
                             bool isCritical = false;
-                            IsProcessCritical(process.Handle, ref isCritical);
+                            IntPtr hprocess = OpenProcess(ProcessAccessFlags.QueryLimitedInformation, false, process.Id);
+                            IsProcessCritical(hprocess, ref isCritical);
+                            CloseHandle(hprocess);
                             if (isCritical)
                             {
                                 Console.WriteLine($"{process.ProcessName} is a critical process, skipping...");
-                                continue;
+                                return;
                             }
                         }
                         
-                        cmdAction.RunTask();
+                        if (Program.UseKernelDriver) cmdAction.RunTask();
+                        else TerminateProcess(process.Handle, 1);
                     }
 
                     int i = 0;
