@@ -14,7 +14,7 @@ using System.Threading;
 using System.Xml;
 using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
-using TrustedUninstaller.Shared.Actions;
+using ame_assassin;
 using static ame_assassin.Initializer;
 using FILETIME = System.Runtime.InteropServices.ComTypes.FILETIME;
 
@@ -52,19 +52,23 @@ namespace ame_assassin
 
         public static List<Process> WhoIsLocking(string path)
         {
-            var key = Guid.NewGuid().ToString();
-            var processes = new List<Process>();
+            string key = Guid.NewGuid().ToString();
+            List<Process> processes = new List<Process>();
 
-            var res = RmStartSession(out var handle, 0, key);
-            if (res != 0) throw new Exception("Could not begin restart session.  Unable to determine file locker.");
+            int res = RmStartSession(out uint handle, 0, key);
+            if (res != 0)
+            {
+                throw new Exception("Could not begin restart session.  Unable to determine file locker.");
+            }
 
-            try {
+            try
+            {
                 const int ERROR_MORE_DATA = 234;
                 uint pnProcInfoNeeded = 0,
                     pnProcInfo = 0,
                     lpdwRebootReasons = RmRebootReasonNone;
 
-                string[] resources = { path }; // Just checking on one resource.
+                string[] resources = new string[] { path }; // Just checking on one resource.
 
                 res = RmRegisterResources(handle, (uint)resources.Length, resources, 0, null, 0, null);
 
@@ -75,32 +79,37 @@ namespace ame_assassin
                 //      the actual processes this number may have increased.
                 res = RmGetList(handle, out pnProcInfoNeeded, ref pnProcInfo, null, ref lpdwRebootReasons);
 
-                if (res == ERROR_MORE_DATA) {
+                if (res == ERROR_MORE_DATA)
+                {
                     // Create an array to store the process results
-                    var processInfo = new RM_PROCESS_INFO[pnProcInfoNeeded];
+                    RM_PROCESS_INFO[] processInfo = new RM_PROCESS_INFO[pnProcInfoNeeded + 3];
                     pnProcInfo = pnProcInfoNeeded;
 
                     // Get the list
                     res = RmGetList(handle, out pnProcInfoNeeded, ref pnProcInfo, processInfo, ref lpdwRebootReasons);
-                    if (res == 0) {
+                    if (res == 0)
+                    {
                         processes = new List<Process>((int)pnProcInfo);
 
                         // Enumerate all of the results and add them to the 
                         // list to be returned
-                        for (var i = 0; i < pnProcInfo; i++)
-                            try {
+                        for (int i = 0; i < pnProcInfo; i++)
+                        {
+                            try
+                            {
                                 processes.Add(Process.GetProcessById(processInfo[i].Process.dwProcessId));
                             }
                             // catch the error -- in case the process is no longer running
-                            catch (ArgumentException) {
-                            }
-                    } else {
-                        throw new Exception("Could not list processes locking resource.");
+                            catch (ArgumentException) { }
+                        }
                     }
-                } else if (res != 0) {
-                    throw new Exception("Could not list processes locking resource. Could not get size of result.");
+                    else throw new Exception("Could not list processes locking resource: " + res);
                 }
-            } finally {
+                else if (res != 0)
+                    throw new Exception("Could not list processes locking resource. Could not get size of result." + $" Result value: {res}");
+            }
+            finally
+            {
                 RmEndSession(handle);
             }
 
@@ -1270,7 +1279,7 @@ namespace ame_assassin
                         }
                     }
                 } catch (Exception e) {
-                    Console.WriteLine($"\r\nError: Could not open families subkey in key HKCR\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository.\r\nException: {e.Message}");
+                    //Console.WriteLine($"\r\nError: Could not open families subkey in key HKCR\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository.\r\nException: {e.Message}");
                 }
 
                 return;
@@ -1871,10 +1880,8 @@ Examples:
             {
                 try
                 {
-                    var cmdAction = new CmdAction();
-                    cmdAction.Command = "start explorer.exe";
-                    cmdAction.Wait = false;
-                    cmdAction.RunTask();
+                    var explorer = new RunAction() { Exe = "explorer.exe", Wait = false };
+                    explorer.RunTaskOnMainThread();
                 } catch (Exception) { }
             }
             

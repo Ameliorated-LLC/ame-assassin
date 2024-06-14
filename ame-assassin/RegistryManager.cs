@@ -34,11 +34,12 @@ namespace ame_assassin
             string name;
 
             if (path.Contains("Users\\Default\\")) name = classHive ? "AME_UserHive_Default_Classes" : "AME_UserHive_Default";
-            else name = classHive ? "AME_UserHive_" + (HivesLoaded + 1) + "_Classes" : "AME_UserHive_" + (HivesLoaded + 1);
+            else name = classHive ? "AME_UserHive_" + (HivesLoaded) + "_Classes" : "AME_UserHive_" + (HivesLoaded + 1);
 
             IntPtr parentHandle = parentKey.Handle.DangerousGetHandle();
             RegLoadKey(parentHandle, name, path);
-            HivesLoaded++;
+            if (!path.Contains("Users\\Default\\"))
+                HivesLoaded++;
         }
         public static void LoadFromFile(string path, string name)
         {

@@ -2,23 +2,26 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security;
+using System.Security.Principal;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using ame_assassin;
+using System.Windows;
 using Microsoft.Win32;
 using TrustedUninstaller.Shared.Tasks;
 
 
-namespace TrustedUninstaller.Shared.Actions
+namespace ame_assassin
 {
-    internal enum RegistryKeyOperation
+    public enum RegistryKeyOperation
     {
         Delete = 0,
         Add = 1
     }
-    class RegistryKeyAction : ITaskAction
+    internal class RegistryKeyAction : ITaskAction
     {
+        public void RunTaskOnMainThread() { throw new NotImplementedException(); }
         public string KeyName { get; set; }
 
         public Scope Scope { get; set; } = Scope.AllUsers;
@@ -29,6 +32,36 @@ namespace TrustedUninstaller.Shared.Actions
         
         public int ProgressWeight { get; set; } = 1;
         public int GetProgressWeight() => ProgressWeight;
+        
+        static Dictionary<RegistryHive, UIntPtr> HiveKeys = new Dictionary<RegistryHive, UIntPtr> {
+            { RegistryHive.ClassesRoot, new UIntPtr(0x80000000u) },
+            { RegistryHive.CurrentConfig, new UIntPtr(0x80000005u) },
+            { RegistryHive.CurrentUser, new UIntPtr(0x80000001u) },
+            { RegistryHive.DynData, new UIntPtr(0x80000006u) },
+            { RegistryHive.LocalMachine, new UIntPtr(0x80000002u) },
+            { RegistryHive.PerformanceData, new UIntPtr(0x80000004u) },
+            { RegistryHive.Users, new UIntPtr(0x80000003u) }
+        };
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern int RegOpenKeyEx(UIntPtr hKey, string subKey, int ulOptions, int samDesired, out UIntPtr hkResult);
+  
+        [DllImport("advapi32.dll", EntryPoint = "RegDeleteKeyEx", SetLastError = true)]
+        private static extern int RegDeleteKeyEx(
+            UIntPtr hKey,
+            string lpSubKey,
+            uint samDesired, // see Notes below
+            uint Reserved);
+        private static void DeleteKeyTreeWin32(string key, RegistryHive hive)
+        {
+            var openedKey = RegistryKey.OpenBaseKey(hive, RegistryView.Default).OpenSubKey(key);
+            if (openedKey == null)
+                return;
+
+            openedKey.GetSubKeyNames().ToList().ForEach(subKey => DeleteKeyTreeWin32(key + "\\" + subKey, hive));
+            openedKey.Close();
+
+            RegDeleteKeyEx(HiveKeys[hive], key, 0x0100, 0);
+        }
         
         private bool InProgress { get; set; }
         public void ResetProgress() => InProgress = false;
@@ -55,7 +88,7 @@ namespace TrustedUninstaller.Shared.Actions
                             Where(x => x.StartsWith("S-") && 
                                 usersKey.OpenSubKey(x).GetSubKeyNames().Any(y => y.Equals("Volatile Environment"))).ToList();
                     
-                        userKeys.AddRange(usersKey.GetSubKeyNames().Where(x => x.StartsWith("AME_UserHive_")).ToList());
+                        userKeys.AddRange(usersKey.GetSubKeyNames().Where(x => x.StartsWith("AME_UserHive_") && !x.EndsWith("_Classes")).ToList());
                     
                         userKeys.ForEach(x => list.Add(usersKey.OpenSubKey(x, true)));
                         return list;
@@ -69,7 +102,7 @@ namespace TrustedUninstaller.Shared.Actions
                         return list;
                     case Scope.DefaultUser:
                         usersKey = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
-                        userKeys = usersKey.GetSubKeyNames().Where(x => x.Equals("AME_UserHive_Default")).ToList();
+                        userKeys = usersKey.GetSubKeyNames().Where(x => x.Equals("AME_UserHive_Default") && !x.EndsWith("_Classes")).ToList();
                         
                         userKeys.ForEach(x => list.Add(usersKey.OpenSubKey(x, true)));
                         return list;
@@ -90,7 +123,7 @@ namespace TrustedUninstaller.Shared.Actions
             return list;
         }
 
-        public string GetSubKey() => KeyName.Substring(KeyName.IndexOf("\\") + 1);
+        public string GetSubKey() => KeyName.Substring(KeyName.IndexOf('\\') + 1);
 
         private RegistryKey? OpenSubKey(RegistryKey root)
         {
@@ -103,27 +136,45 @@ namespace TrustedUninstaller.Shared.Actions
 
         public UninstallTaskStatus GetStatus()
         {
-            var roots = GetRoots();
-
-            foreach (var root in roots)
+            try
             {
-                try
-                {
-                    var subKey = root.OpenSubKey(KeyName);
+                var roots = GetRoots();
 
-                    if (Operation == RegistryKeyOperation.Delete && subKey != null)
-                    {
-                        return UninstallTaskStatus.ToDo;
-                    }
-                    if (Operation == RegistryKeyOperation.Add && subKey == null)
-                    {
-                        return UninstallTaskStatus.ToDo;
-                    }
-                }
-                catch (SecurityException)
+                foreach (var _root in roots)
                 {
-                    return UninstallTaskStatus.ToDo;
+                    var root = _root;
+                    var subKey = GetSubKey();
+                    
+                    if (root.Name.Contains("AME_UserHive_") && subKey.StartsWith("SOFTWARE\\Classes", StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        var usersKey = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
+
+                        root = usersKey.OpenSubKey(root.Name.Substring(11) + "_Classes", true);
+                        subKey = Regex.Replace(subKey, @"^SOFTWARE\\*Classes\\*", "", RegexOptions.IgnoreCase);
+
+                        if (root == null)
+                        {
+                            continue;
+                        }
+                    }
+                    
+                    var openedSubKey = root.OpenSubKey(subKey);
+
+                    if (Operation == RegistryKeyOperation.Delete && openedSubKey != null)
+                    {
+                        return UninstallTaskStatus.ToDo;
+                    }
+                    if (Operation == RegistryKeyOperation.Add && openedSubKey == null)
+                    {
+                        return UninstallTaskStatus.ToDo;
+                    }
                 }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+
+                return UninstallTaskStatus.ToDo;
             }
             return UninstallTaskStatus.Completed;
         }
@@ -131,7 +182,7 @@ namespace TrustedUninstaller.Shared.Actions
         public void RunTask()
         {
             Console.WriteLine($"{Operation.ToString().TrimEnd('e')}ing registry key '{KeyName}'...");
-
+            
             var roots = GetRoots();
 
             foreach (var _root in roots)
@@ -139,33 +190,59 @@ namespace TrustedUninstaller.Shared.Actions
                 var root = _root;
                 var subKey = GetSubKey();
 
-                if (root.Name.StartsWith("AME_UserHive_") && subKey.StartsWith("Software\\Classes", StringComparison.CurrentCultureIgnoreCase))
+                try
                 {
-                    var usersKey = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
-
-                    root = usersKey.OpenSubKey(root.Name + "_Classes", true);
-                    subKey = Regex.Replace(subKey, @"Software\\Classes", "", RegexOptions.IgnoreCase);
-
-                    if (root == null)
+                    if (root.Name.Contains("AME_UserHive_") && subKey.StartsWith("SOFTWARE\\Classes", StringComparison.CurrentCultureIgnoreCase))
                     {
-                        Console.WriteLine($"\r\nError: User classes hive not found for hive {_root.Name}.");
-                        continue;
-                    }
-                }
+                        var usersKey = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
 
-                if (Operation == RegistryKeyOperation.Add && root.OpenSubKey(subKey) == null)
-                {
-                    root.CreateSubKey(subKey);
-                }
-                if (Operation == RegistryKeyOperation.Delete)
-                {
-                    if (OnlyIfEmpty)
-                    {
-                        var subOpened = root.OpenSubKey(subKey);
+                        root = usersKey.OpenSubKey(root.Name.Substring(11) + "_Classes", true);
+                        subKey = Regex.Replace(subKey, @"^SOFTWARE\\*Classes\\*", "", RegexOptions.IgnoreCase);
                         
-                        if (subOpened != null && (subOpened.GetValueNames().Any() || subOpened.GetSubKeyNames().Any())) return;
+                        if (root == null)
+                        {
+                            Console.WriteLine($"User classes hive not found for hive {_root.Name}.");
+                            continue;
+                        }
                     }
-                    root.DeleteSubKeyTree(subKey, false);
+
+                    if (Operation == RegistryKeyOperation.Add && root.OpenSubKey(subKey) == null)
+                    {
+                        root.CreateSubKey(subKey);
+                    }
+                    if (Operation == RegistryKeyOperation.Delete)
+                    {
+                        if (OnlyIfEmpty)
+                        {
+                            var subOpened = root.OpenSubKey(subKey);
+                        
+                            if (subOpened != null && (subOpened.GetValueNames().Any() || subOpened.GetSubKeyNames().Any())) return;
+                        }
+                        
+                        try
+                        {
+                            root.DeleteSubKeyTree(subKey, false);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(e.GetType() + ": " + e.Message);
+
+                            var rootHive = root.Name.Split('\\').First() switch
+                            {
+                                "HKEY_CURRENT_USER" => RegistryHive.CurrentUser,
+                                "HKEY_LOCAL_MACHINE" => RegistryHive.LocalMachine,
+                                "HKEY_CLASSES_ROOT" => RegistryHive.ClassesRoot,
+                                "HKEY_USERS" => RegistryHive.Users,
+                                _ => throw new ArgumentException($"Unable to parse: " + root.Name.Split('\\').First())
+                            };
+                            
+                            DeleteKeyTreeWin32(root.Name.StartsWith("HKEY_USERS") ? root.Name.Split('\\')[1] + "\\" + subKey: subKey, rootHive);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.Message);
                 }
             }
             return;

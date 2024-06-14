@@ -60,6 +60,7 @@
         <Compile Include="Actions\FileAction.cs" />
         <Compile Include="Actions\RegistryKeyAction.cs" />
         <Compile Include="Actions\RegistryValueAction.cs" />
+        <Compile Include="Actions\RunAction.cs" />
         <Compile Include="Actions\ScheduledTaskAction.cs" />
         <Compile Include="Actions\ServiceAction.cs" />
         <Compile Include="Actions\TaskKillAction.cs" />
@@ -74,6 +75,7 @@
         <Compile Include="Tasks\UninstallTask.cs" />
         <Compile Include="Tasks\UninstallTaskPrivilege.cs" />
         <Compile Include="Tasks\UninstallTaskStatus.cs" />
+        <Compile Include="Win32.cs" />
     </ItemGroup>
     <ItemGroup>
       <None Include="App.config" />
@@ -152,6 +154,20 @@
       <None Include="assassin-helper.dll">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </None>
+    </ItemGroup>
+    <ItemGroup>
+      <Content Include="msvcp140.dll">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+      <Content Include="Unlocker.dll">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+      <Content Include="vcruntime140.dll">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+      <Content Include="vcruntime140_1.dll">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

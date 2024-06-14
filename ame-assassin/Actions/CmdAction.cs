@@ -1,21 +1,30 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using TrustedUninstaller.Shared.Tasks;
 
-namespace TrustedUninstaller.Shared.Actions
+namespace ame_assassin
 {
     public class CmdAction : ITaskAction
     {
+        public void RunTaskOnMainThread()
+        {
+            ExitCode = null;
+            RunAsProcess();
+        }
+
         public string Command { get; set; }
-        
+
         public int? Timeout { get; set; }
-        
+
         public bool Wait { get; set; } = true;
-        
+
         public bool ExeDir { get; set; } = false;
-        
+
         public int ProgressWeight { get; set; } = 1;
         
         public int GetProgressWeight() => ProgressWeight;
@@ -25,7 +34,7 @@ namespace TrustedUninstaller.Shared.Actions
 
         private int? ExitCode { get; set; }
 
-        public string StandardError { get; set; }
+        public string? StandardError { get; set; }
 
         public string StandardOutput { get; set; }
 
@@ -40,20 +49,20 @@ namespace TrustedUninstaller.Shared.Actions
 
             return ExitCode == null ? UninstallTaskStatus.ToDo: UninstallTaskStatus.Completed;
         }
+        
         public void RunTask()
         {
-            InProgress = true;
-            
-            Console.WriteLine($"Running cmd command '{Command}'...");
-            
-            ExitCode = null;
+            return;
+        }
 
+        private void RunAsProcess()
+        {
             var process = new Process();
             var startInfo = new ProcessStartInfo
             {
                 WindowStyle = ProcessWindowStyle.Normal,
                 FileName = "cmd.exe",
-                Arguments = "/C" + this.Command,
+                Arguments = "/C " + $"\"{this.Command}\"",
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
@@ -76,13 +85,19 @@ namespace TrustedUninstaller.Shared.Actions
                 process.Dispose();
                 return;
             }
-                
+            
+            var error = new StringBuilder();
             process.OutputDataReceived += ProcOutputHandler;
-
-            if (Wait)
+            process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs args)
             {
-                process.BeginOutputReadLine();
-            }
+                if (!String.IsNullOrEmpty(args.Data))
+                    error.AppendLine(args.Data);
+                else
+                    error.AppendLine();
+            };
+            
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
 
             if (Timeout != null)
             {
@@ -93,35 +108,41 @@ namespace TrustedUninstaller.Shared.Actions
                     throw new TimeoutException($"Command '{Command}' timeout exceeded.");
                 }
             }
-                
-            else process.WaitForExit();
-
-            if (process.ExitCode != 0)
-            {
-                StandardError = process.StandardError.ReadToEnd();
-                Console.WriteLine($"cmd instance exited with error code: {process.ExitCode}");
-                if (!String.IsNullOrEmpty(StandardError)) Console.WriteLine($"Error message: {StandardError}");
-                this.ExitCode = process.ExitCode;
-            }
             else
             {
-                ExitCode = 0;
-            }
-            process.Dispose();
-                
-            InProgress = false;
-            return;
-        }
+                bool exited = process.WaitForExit(30000);
 
-        private static void ProcOutputHandler(object sendingProcess,
-         DataReceivedEventArgs outLine)
+                // WaitForExit alone seems to not be entirely reliable
+                while (!exited && CmdRunning(process.Id))
+                {
+                    exited = process.WaitForExit(30000);
+                }
+            }
+            
+            process.CancelOutputRead();
+            process.CancelErrorRead();
+            process.Dispose();
+        }
+        
+        private static bool CmdRunning(int id)
+        {
+            try
+            {
+                return Process.GetProcessesByName("cmd").Any(x => x.Id == id);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+        
+        private void ProcOutputHandler(object sendingProcess, DataReceivedEventArgs outLine)
         {
             var outputString = outLine.Data;
 
             // Collect the sort command output. 
             if (!String.IsNullOrEmpty(outLine.Data))
             {
-
                 if (outputString.Contains("\\AME"))
                 {
                     outputString = outputString.Substring(outputString.IndexOf('>') + 1);

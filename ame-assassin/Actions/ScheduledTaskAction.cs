@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Win32.TaskScheduler;
 using TrustedUninstaller.Shared.Tasks;
 
-namespace TrustedUninstaller.Shared.Actions
+namespace ame_assassin
 {
     internal enum ScheduledTaskOperation
     {
@@ -18,7 +18,8 @@ namespace TrustedUninstaller.Shared.Actions
 
     internal class ScheduledTaskAction : ITaskAction
     {
-        public ScheduledTaskOperation Operation { get; set; } = ScheduledTaskOperation.Disable;
+        public void RunTaskOnMainThread() { throw new NotImplementedException(); }
+        public ScheduledTaskOperation Operation { get; set; } = ScheduledTaskOperation.Delete;
         public string? RawTask { get; set; } = null;
         public string Path { get; set; }
 
@@ -60,14 +61,15 @@ namespace TrustedUninstaller.Shared.Actions
             else
             {
                 var folder = ts.GetFolder(Path);
-                return folder == null ? UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo;
+                if (folder == null)
+                    return UninstallTaskStatus.Completed;
+                
+                return folder.GetTasks().Any() ? UninstallTaskStatus.ToDo : UninstallTaskStatus.Completed;
             }
         }
 
         public void RunTask()
         {
-
-
             if (GetStatus() == UninstallTaskStatus.Completed)
             {
                 return;
@@ -136,7 +138,14 @@ namespace TrustedUninstaller.Shared.Actions
                 
                 folder.GetTasks().ToList().ForEach(x => folder.DeleteTask(x.Name));
 
-                folder.Parent.DeleteFolder(folder.Name);
+                try
+                {
+                    folder.Parent.DeleteFolder(folder.Name);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.Message);
+                }
 
                 InProgress = false;
                 return;

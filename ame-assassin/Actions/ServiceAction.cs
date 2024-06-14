@@ -1,21 +1,22 @@
 ﻿#nullable enable
 using System;
+using System.Collections.Specialized;
 using System.Configuration.Install;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management;
-using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-using ame_assassin;
+using System.Windows;
 using Microsoft.Win32;
 using TrustedUninstaller.Shared.Tasks;
 
-namespace TrustedUninstaller.Shared.Actions
+namespace ame_assassin
 {
-    internal enum ServiceOperation
+    public enum ServiceOperation
     {
         Stop,
         Continue,
@@ -24,8 +25,9 @@ namespace TrustedUninstaller.Shared.Actions
         Delete,
         Change
     }
-    internal class ServiceAction : ITaskAction
+    public class ServiceAction : ITaskAction
     {
+        public void RunTaskOnMainThread() { throw new NotImplementedException(); }
         public ServiceOperation Operation { get; set; } = ServiceOperation.Delete;
         
         public string ServiceName { get; set; } = null!;
@@ -75,57 +77,62 @@ namespace TrustedUninstaller.Shared.Actions
         {
             if (InProgress) return UninstallTaskStatus.InProgress;
 
-            using(var serviceController = GetService())
+            if (Operation == ServiceOperation.Change && Startup.HasValue)
             {
-                if (Operation == ServiceOperation.Change && Startup.HasValue)
-                {
-                    // TODO: Implement dev log. Example:
-                    // if (Registry.LocalMachine.OpenSubKey($@"HKLM\SYSTEM\CurrentControlSet\Services\{ServiceName}") == null) WriteToDevLog($"Warning: Service name '{ServiceName}' not found in registry.");
-                    
-                    var root = Registry.LocalMachine.OpenSubKey($@"HKLM\SYSTEM\CurrentControlSet\Services\{ServiceName}");
-                    if (root == null) return UninstallTaskStatus.Completed;
+                // TODO: Implement dev log. Example:
+                // if (Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}") == null) WriteToDevLog($"Warning: Service name '{ServiceName}' not found in registry.");
 
-                    var value = root.GetValue("Start");
+                var root = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+                if (root == null) return UninstallTaskStatus.Completed;
 
-                    return (int)value == Startup.Value ? UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo;
-                }
-                if (Operation == ServiceOperation.Delete && RegistryDelete)
-                {
-                    // TODO: Implement dev log. Example:
-                    // if (Registry.LocalMachine.OpenSubKey($@"HKLM\SYSTEM\CurrentControlSet\Services\{ServiceName}") == null) WriteToDevLog($"Warning: Service name '{ServiceName}' not found in registry.");
-                    
-                    var root = Registry.LocalMachine.OpenSubKey($@"HKLM\SYSTEM\CurrentControlSet\Services\{ServiceName}");
-                    return root == null ? UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo;
-                }
-                
-                return Operation switch
-                {
-                    ServiceOperation.Stop =>
-                    serviceController?.Status == ServiceControllerStatus.Stopped
-                    || serviceController?.Status == ServiceControllerStatus.StopPending ?
-                    UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
-                    ServiceOperation.Continue =>
-                    serviceController?.Status == ServiceControllerStatus.Running
-                    || serviceController?.Status == ServiceControllerStatus.ContinuePending ?
-                    UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
-                    ServiceOperation.Start =>
-                    serviceController?.Status == ServiceControllerStatus.StartPending
-                    || serviceController?.Status == ServiceControllerStatus.Running ?
-                    UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
-                    ServiceOperation.Pause =>
-                    serviceController?.Status == ServiceControllerStatus.Paused
-                    || serviceController?.Status == ServiceControllerStatus.PausePending ?
-                    UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
-                    ServiceOperation.Delete =>
-                    serviceController == null ?
-                    UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
-                    _ => throw new ArgumentOutOfRangeException("Argument out of Range", new ArgumentOutOfRangeException())
-                };
+                var value = root.GetValue("Start");
+
+                return (int)value == Startup.Value ? UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo;
             }
             
-        }
-        private readonly string[] RegexNoKill = { "DcomLaunch" }; 
+            ServiceController? serviceController;
+            if (Device) serviceController = GetDevice();
+            else serviceController = GetService();
+            
+            if (Operation == ServiceOperation.Delete && RegistryDelete)
+            {
+                // TODO: Implement dev log. Example:
+                // if (Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}") == null) WriteToDevLog($"Warning: Service name '{ServiceName}' not found in registry.");
 
+                var root = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+                return root == null ? UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo;
+            }
+
+            return Operation switch
+            {
+                ServiceOperation.Stop =>
+                    serviceController == null ||
+                    serviceController?.Status == ServiceControllerStatus.Stopped
+                    || serviceController?.Status == ServiceControllerStatus.StopPending ?
+                        UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
+                ServiceOperation.Continue =>
+                    serviceController == null ||
+                    serviceController?.Status == ServiceControllerStatus.Running
+                    || serviceController?.Status == ServiceControllerStatus.ContinuePending ?
+                        UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
+                ServiceOperation.Start =>
+                    serviceController?.Status == ServiceControllerStatus.StartPending
+                    || serviceController?.Status == ServiceControllerStatus.Running ?
+                        UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
+                ServiceOperation.Pause =>
+                    serviceController == null ||
+                    serviceController?.Status == ServiceControllerStatus.Paused
+                    || serviceController?.Status == ServiceControllerStatus.PausePending ?
+                        UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
+                ServiceOperation.Delete =>
+                    serviceController == null || Win32.ServiceEx.IsPendingDeleteOrDeleted(serviceController.ServiceName) ?
+                        UninstallTaskStatus.Completed : UninstallTaskStatus.ToDo,
+                _ => throw new ArgumentOutOfRangeException("Argument out of Range", new ArgumentOutOfRangeException())
+            };
+        }
+
+        private readonly string[] RegexNoKill = { "DcomLaunch" }; 
+        
         public void RunTask()
         {
             if (Operation == ServiceOperation.Change && !Startup.HasValue) throw new ArgumentException("Startup property must be specified with the change operation.");
@@ -134,77 +141,102 @@ namespace TrustedUninstaller.Shared.Actions
             // This is a little cursed but it works and is concise lol
             Console.WriteLine($"{Operation.ToString().Replace("Stop", "Stopp").TrimEnd('e')}ing services matching '{ServiceName}'...");
             
-            ServiceController? service;
+            if (Operation == ServiceOperation.Change)
+            {
+                var action = new RegistryValueAction()
+                {
+                    KeyName = $@"HKLM\SYSTEM\CurrentControlSet\Services\{ServiceName}", 
+                    Value = "Start", 
+                    Data = Startup.Value, 
+                    Type = RegistryValueType.REG_DWORD, 
+                    Operation = RegistryValueOperation.Set
+                };
+                action.RunTask();
+                
+                InProgress = false;
+                return;
+            }
             
+            ServiceController? service;
+
             if (Device) service = GetDevice();
             else service = GetService();
 
-            if (service == null && Operation != ServiceOperation.Change)
+            if (service == null)
             {
                 Console.WriteLine($"No services found matching '{ServiceName}'.");
-                //ErrorLogger.WriteToErrorLog($"The service matching '{ServiceName}' does not exist.", Environment.StackTrace, "ServiceAction Error");
+                //Console.WriteLine($"The service matching '{ServiceName}' does not exist.");
+                if (Operation == ServiceOperation.Start)
+                    throw new ArgumentException("Service " + ServiceName + " not found.");
+                
                 return;
             }
 
             InProgress = true;
 
-            
             var cmdAction = new CmdAction();
 
-            if (Operation == ServiceOperation.Delete || Operation == ServiceOperation.Stop)
+            if ((Operation == ServiceOperation.Delete && DeleteStop) || Operation == ServiceOperation.Stop)
             {
                 if (RegexNoKill.Any(regex => Regex.Match(ServiceName, regex, RegexOptions.IgnoreCase).Success))
                 {
                     Console.WriteLine($"Skipping {ServiceName}...");
-                    return;
                 }
-                
-                foreach (ServiceController dependentService in service.DependentServices)
+
+                try
                 {
-                    Console.WriteLine($"Killing dependent service {dependentService.ServiceName}...");
-                    
-                    cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {dependentService.ServiceName} -caction stop";
-                    if (Program.UseKernelDriver) cmdAction.RunTask(); 
-                    else dependentService.Stop();
-                    
-                    Console.WriteLine("Waiting for the service to stop...");
-                    int delay = 100;
-                    while (service.Status != ServiceControllerStatus.Stopped && delay <= 800)
+                    foreach (ServiceController dependentService in service.DependentServices.Where(x => x.Status != ServiceControllerStatus.Stopped))
                     {
-                        service.Refresh();
-                        //Wait for the service to stop
-                        Task.Delay(delay).Wait();
-                        delay += 100;
-                    }
-                    if (delay >= 800)
-                    {
-                        Console.WriteLine("\r\nService stop timeout exceeded. Trying second method...");
-                        
+                        Console.WriteLine($"Killing dependent service {dependentService.ServiceName}...");
+
+                        if (dependentService.Status != ServiceControllerStatus.StopPending && dependentService.Status != ServiceControllerStatus.Stopped)
+                        {
+                            try
+                            {
+                                dependentService.Stop();
+                            }
+                            catch (Exception e)
+                            {
+                                dependentService.Refresh();
+                                if (dependentService.Status != ServiceControllerStatus.Stopped && dependentService.Status != ServiceControllerStatus.StopPending)
+                                    Console.WriteLine("Dependent service stop failed: " + e.Message);
+                            }
+
+                            cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {dependentService.ServiceName} -caction stop";
+                            if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+                        }
+
+                        Console.WriteLine("Waiting for the dependent service to stop...");
                         try
                         {
-                            using var search = new ManagementObjectSearcher($"SELECT * FROM Win32_Service WHERE Name='{service.ServiceName}'");
-
-                            foreach (ManagementObject queryObj in search.Get())
-                            {
-                                var serviceId = (UInt32)queryObj["ProcessId"]; // Access service name  
-                                
-                                var killServ = new TaskKillAction()
-                                {
-                                ProcessID = (int)serviceId
-                                };
-                                killServ.RunTask();
-                            }
+                            dependentService.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMilliseconds(5000));
                         }
                         catch (Exception e)
                         {
-                            Console.WriteLine($"\r\nError: Could not kill dependent service {dependentService.ServiceName}.");
+                            dependentService.Refresh();
+                            if (service.Status != ServiceControllerStatus.Stopped)
+                                Console.WriteLine("Dependent service stop timeout exceeded.");
+                        }
+                        
+                        try
+                        {
+                            var killServ = new TaskKillAction()
+                            {
+                                ProcessID = Win32.ServiceEx.GetServiceProcessId(dependentService.ServiceName)
+                            };
+                            killServ.RunTask();
+                        }
+                        catch (Exception e)
+                        {
+                            dependentService.Refresh();
+                            if (dependentService.Status != ServiceControllerStatus.Stopped)
+                                Console.WriteLine($"Could not kill dependent service {dependentService.ServiceName}.");
                         }
                     }
                 }
-
-                if (service.ServiceName == "SgrmAgent" && ((Operation == ServiceOperation.Delete && DeleteStop) || Operation == ServiceOperation.Stop))
+                catch (Exception e)
                 {
-                    new TaskKillAction() { ProcessName = "SgrmBroker" }.RunTask();
+                    Console.WriteLine($"Error killing dependent services: " + e.Message);
                 }
             }
 
@@ -213,45 +245,47 @@ namespace TrustedUninstaller.Shared.Actions
 
                 if (DeleteStop && service.Status != ServiceControllerStatus.StopPending && service.Status != ServiceControllerStatus.Stopped)
                 {
-                    cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction stop";
-                    if (Program.UseKernelDriver) cmdAction.RunTask(); 
-                    else service.Stop();
-                }
-
-                Console.WriteLine("Waiting for the service to stop...");
-                int delay = 100;
-                while (DeleteStop && service.Status != ServiceControllerStatus.Stopped && delay <= 1200)
-                {
-                    service.Refresh();
-                    //Wait for the service to stop
-                    Task.Delay(delay);
-                    delay += 100;
-                }
-                if (delay >= 1200)
-                {
-                    Console.WriteLine("\r\nService stop timeout exceeded. Trying second method...");
-                        
                     try
                     {
-                        using var search = new ManagementObjectSearcher($"SELECT * FROM Win32_Service WHERE Name='{service.ServiceName}'");
-
-                        foreach (ManagementObject queryObj in search.Get())
-                        {
-                            var serviceId = (UInt32)queryObj["ProcessId"]; // Access service name  
-                                
-                            var killServ = new TaskKillAction()
-                            {
-                                ProcessID = (int)serviceId
-                            };
-                            killServ.RunTask();
-                        }
+                        service.Stop();
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine($"\r\nError: Could not kill service {service.ServiceName}.");
+                        service.Refresh();
+                        if (service.Status != ServiceControllerStatus.Stopped && service.Status != ServiceControllerStatus.StopPending)
+                            Console.WriteLine("Service stop failed: " + e.Message);
+                    }
+
+                    cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction stop";
+                    if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+                    
+                    Console.WriteLine("Waiting for the service to stop...");
+                    try
+                    {
+                        service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMilliseconds(5000));
+                    }
+                    catch (Exception e)
+                    {
+                        service.Refresh();
+                        if (service.Status != ServiceControllerStatus.Stopped)
+                            Console.WriteLine("Service stop timeout exceeded.");
+                    }
+                    try
+                    {
+                        var killServ = new TaskKillAction()
+                        {
+                            ProcessID = Win32.ServiceEx.GetServiceProcessId(service.ServiceName)
+                        };
+                        killServ.RunTask();
+                    }
+                    catch (Exception e)
+                    {
+                        service.Refresh();
+                        if (service.Status != ServiceControllerStatus.Stopped)
+                            Console.WriteLine($"Could not kill service {service.ServiceName}.");
                     }
                 }
-
+                
                 if (RegistryDelete)
                 {
                     var action = new RegistryKeyAction()
@@ -263,37 +297,145 @@ namespace TrustedUninstaller.Shared.Actions
                 }
                 else
                 {
-                    cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction delete";
-                    if (Program.UseKernelDriver) cmdAction.RunTask(); 
-                    else
+                    try
                     {
                         ServiceInstaller ServiceInstallerObj = new ServiceInstaller();
                         ServiceInstallerObj.Context = new InstallContext();
                         ServiceInstallerObj.ServiceName = service.ServiceName; 
                         ServiceInstallerObj.Uninstall(null);
                     }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("Service uninstall failed: " + e.Message);
+                    }
+                    cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction delete";
+                    if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+                }
+
+            } else if (Operation == ServiceOperation.Start)
+            {
+                try
+                {
+                    service.Start();
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Running)
+                        Console.WriteLine("Service start failed: " + e.Message);
+                }
+
+                cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction start";
+                if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+                
+                try
+                {
+                    service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromMilliseconds(5000));
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Running)
+                        Console.WriteLine("Service start timeout exceeded.");
+                }
+            } else if (Operation == ServiceOperation.Stop)
+            {
+                try
+                {
+                    service.Stop();
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Stopped && service.Status != ServiceControllerStatus.StopPending)
+                        Console.WriteLine("Service stop failed: " + e.Message);
+                }
+
+                cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction stop";
+                if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+
+                Console.WriteLine("Waiting for the service to stop...");
+                try
+                {
+                    service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMilliseconds(5000));
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Stopped)
+                        Console.WriteLine("Service stop timeout exceeded.");
+                }
+                try
+                {
+                    var killServ = new TaskKillAction()
+                    {
+                        ProcessID = Win32.ServiceEx.GetServiceProcessId(service.ServiceName)
+                    };
+                    killServ.RunTask();
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Stopped)
+                        Console.WriteLine($"Could not kill dependent service {service.ServiceName}.");
+                }
+            } else if (Operation == ServiceOperation.Pause)
+            {
+                try
+                {
+                    service.Pause();
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Paused)
+                        Console.WriteLine("Service pause failed: " + e.Message);
+                }
+
+                cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction pause";
+                if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+                
+                try
+                {
+                    service.WaitForStatus(ServiceControllerStatus.Paused, TimeSpan.FromMilliseconds(5000));
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Paused)
+                        Console.WriteLine("Service pause timeout exceeded.");
                 }
             }
-            else if (Operation != ServiceOperation.Change)
+            else if (Operation == ServiceOperation.Continue)
             {
-                cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {ServiceName} -caction {Operation.ToString().ToLower()}";
-                if (Program.UseKernelDriver) cmdAction.RunTask();
-            }
-            else
-            {
-                var action = new RegistryValueAction()
+                try
                 {
-                    KeyName = $@"HKLM\SYSTEM\CurrentControlSet\Services\{ServiceName}", 
-                    Value = "Start", 
-                    Data = Startup.Value, 
-                    Type = RegistryValueType.REG_DWORD, 
-                    Operation = RegistryValueOperation.Set
-                };
-                action.RunTask();
+                    service.Pause();
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Running)
+                        Console.WriteLine("Service continue failed: " + e.Message);
+                }
+
+                cmdAction.Command = Program.ProcessHacker + $" -s -elevate -c -ctype service -cobject {service.ServiceName} -caction continue";
+                if (Program.UseKernelDriver) cmdAction.RunTaskOnMainThread();
+                
+                try
+                {
+                    service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromMilliseconds(5000));
+                }
+                catch (Exception e)
+                {
+                    service.Refresh();
+                    if (service.Status != ServiceControllerStatus.Running)
+                        Console.WriteLine("Service continue timeout exceeded.");
+                }
             }
 
             service?.Dispose();
-            Task.Delay(100);
+            Thread.Sleep(100);
 
             InProgress = false;
             return;

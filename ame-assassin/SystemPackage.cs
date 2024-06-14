@@ -10,7 +10,7 @@ using System.Threading;
 using System.Xml;
 using Microsoft.Win32;
 using Microsoft.Win32.TaskScheduler;
-using TrustedUninstaller.Shared.Actions;
+using ame_assassin;
 using TrustedUninstaller.Shared.Tasks;
 
 namespace ame_assassin
@@ -639,10 +639,8 @@ namespace ame_assassin
             {
                 try
                 {
-                    var cmdAction = new CmdAction();
-                    cmdAction.Command = "start explorer.exe";
-                    cmdAction.Wait = false;
-                    cmdAction.RunTask();
+                    var explorer = new RunAction() { Exe = "explorer.exe", Wait = false };
+                    explorer.RunTaskOnMainThread();
                 } catch (Exception) { }
             }
 

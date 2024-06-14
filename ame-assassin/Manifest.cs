@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
 using Microsoft.Win32;
-using TrustedUninstaller.Shared.Actions;
+using ame_assassin;
 
 namespace ame_assassin
 {
